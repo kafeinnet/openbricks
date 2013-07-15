@@ -11,7 +11,8 @@ do_unselect_opt () {
 }
 
 do_unselect () {
-  pkg_uses $1 $2 || \
+  pkg_uses $1 $2 && \
+    sed -i "s%^(# )?CONFIG_$3=.*%CONFIG_$3=y%" $LINUX/.config || \
     sed -i "s%^CONFIG_$3=.*%# CONFIG_$3 is not set%" $LINUX/.config
 }
 
@@ -69,6 +70,7 @@ do_unselect $1 intel      DRM_I810
 do_unselect $1 intel      DRM_I830
 do_unselect $1 intel      DRM_I915
 do_unselect $1 ipv6       IPV6
+do_unselect $1 dot1q      VLAN_8021Q
 do_unselect $1 lirc       RC_CORE
 do_unselect $1 lvm        MD
 do_unselect $1 mga        DRM_MGA
