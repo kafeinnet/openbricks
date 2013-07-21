@@ -2,7 +2,9 @@
 # Cubox kernel
 #
 # git://github.com/rabeeh/linux.git
-PKG_URL_REV=50bbe1398c
-PKG_VERSION=Cubox-VDorst-3.5.7-patched-git${PKG_URL_REV}
-PKG_URL_PROTO=git
-PKG_URL="git://github.com/vDorst/linux.git"
+#PKG_URL_REV=50bbe1398c
+#PKG_VERSION=Cubox-VDorst-3.5.7-patched-git${PKG_URL_REV}
+#PKG_URL_PROTO=git
+#PKG_URL="git://github.com/vDorst/linux.git"
+PKG_VERSION=3.10.1-patched
+PKG_URL="https://www.kernel.org/pub/linux/kernel/v3.x/linux-3.10.1.tar.xz"
