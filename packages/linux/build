@@ -14,11 +14,13 @@ case $TARGET_ARCH in
   powerpc64)    IMAGE=zImage   ;;
   arm)
     . $CONFIG_MACHINE/meta
-    [ -n "$MACHINE_UBOOT_CONFIG" ] && IMAGE=uImage || IMAGE=zImage
+    #[ -n "$MACHINE_UBOOT_CONFIG" ] && IMAGE=uImage || IMAGE=zImage
+    IMAGE=zImage
     ;;
 esac
 make $IMAGE
 make modules
+make dtbs
 
 install_dir="`pwd`/.install"
 debug_dir="`pwd`/.install-debuginfo/usr/lib/debug"
@@ -46,7 +48,10 @@ case $TARGET_ARCH in
       # add raspberry pi magic
       cat first32k.bin arch/$TARGET_ARCH/boot/Image > .install/boot/kernel.img
     else
-      cp arch/$TARGET_ARCH/boot/$IMAGE .install/boot
+      cat arch/$TARGET_ARCH/boot/$IMAGE arch/$TARGET_ARCH/boot/dts/dove-cubox.dtb > arch/$TARGET_ARCH/boot/zImage.cubox
+      mkimage -A arm -O linux -C none  -T kernel -a 0x00008000 -e 0x00008000 \
+        -n 'Linux-cubox' -d arch/$TARGET_ARCH/boot/zImage.cubox arch/$TARGET_ARCH/boot/uImage
+      cp arch/$TARGET_ARCH/boot/uImage .install/boot
     fi
     ;;
   mips|powerpc)
