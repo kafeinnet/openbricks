@@ -1,0 +1,22 @@
+Signed-off-by: Russell King <rmk+kernel <at> arm.linux.org.uk>
+---
+ drivers/gpu/drm/i2c/tda998x_drv.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i2c/tda998x_drv.c b/drivers/gpu/drm/i2c/tda998x_drv.c
+index 4b4db95..da2917b 100644
+--- a/drivers/gpu/drm/i2c/tda998x_drv.c
++++ b/drivers/gpu/drm/i2c/tda998x_drv.c
+ <at>  <at>  -586,8 +586,8  <at>  <at>  tda998x_encoder_mode_set(struct drm_encoder *encoder,
+ 		reg_set(encoder, REG_VIP_CNTRL_3, VIP_CNTRL_3_H_TGL);
+
+ 	reg_write(encoder, REG_VIDFORMAT, 0x00);
+-	reg_write16(encoder, REG_NPIX_MSB, mode->hdisplay - 1);
+-	reg_write16(encoder, REG_NLINE_MSB, mode->vdisplay - 1);
++	reg_write16(encoder, REG_NPIX_MSB, mode->htotal);
++	reg_write16(encoder, REG_NLINE_MSB, mode->vtotal);
+ 	reg_write16(encoder, REG_VS_LINE_STRT_1_MSB, line_start);
+ 	reg_write16(encoder, REG_VS_LINE_END_1_MSB, line_end);
+ 	reg_write16(encoder, REG_VS_PIX_STRT_1_MSB, hs_start);
+-- 
+1.7.4.4

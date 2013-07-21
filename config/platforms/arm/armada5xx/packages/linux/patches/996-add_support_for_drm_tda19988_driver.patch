@@ -1,0 +1,326 @@
+Signed-off-by: Russell King <rmk+kernel <at> arm.linux.org.uk>
+---
+ drivers/gpu/drm/dove/Kconfig         |    9 ++
+ drivers/gpu/drm/dove/Makefile        |    2 +
+ drivers/gpu/drm/dove/dove_drm.h      |    1 +
+ drivers/gpu/drm/dove/dove_drv.c      |    4 +
+ drivers/gpu/drm/dove/dove_tda19988.c |  249 ++++++++++++++++++++++++++++++++++
+ 5 files changed, 265 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/gpu/drm/dove/dove_tda19988.c
+
+diff --git a/drivers/gpu/drm/dove/Kconfig b/drivers/gpu/drm/dove/Kconfig
+index 24844b6..718d3c5 100644
+--- a/drivers/gpu/drm/dove/Kconfig
++++ b/drivers/gpu/drm/dove/Kconfig
+ <at>  <at>  -16,6 +16,15  <at>  <at>  config DRM_DOVE
+
+ if DRM_DOVE != n
+
++config DRM_DOVE_TDA1998X
++	bool "Support TDA1998X HDMI output"
++	depends on I2C
++	depends on DRM_I2C_NXP_TDA998X = y
++	default y
++	help
++	  Support the TDA1998x HDMI output device found on the Solid-Run
++	  CuBox.
++
+ config DRM_DOVE_CURSOR
+ 	bool "Enable Dove DRM hardware cursor support"
+
+diff --git a/drivers/gpu/drm/dove/Makefile b/drivers/gpu/drm/dove/Makefile
+index a2326c4..65c701e 100644
+--- a/drivers/gpu/drm/dove/Makefile
++++ b/drivers/gpu/drm/dove/Makefile
+ <at>  <at>  -4,4 +4,6  <at>  <at>  dove-y			:= dove_crtc.o dove_drv.o dove_fb.o dove_fbdev.o \
+ 			   dove_gem.o dove_output.o dove_overlay.o
+ dove-$(CONFIG_DEBUG_FS) += dove_debugfs.o
+
++dove-$(CONFIG_DRM_DOVE_TDA1998X) += dove_tda19988.o
++
+ obj-$(CONFIG_DRM_DOVE) := dove.o
+diff --git a/drivers/gpu/drm/dove/dove_drm.h b/drivers/gpu/drm/dove/dove_drm.h
+index d00a9d6..825c553 100644
+--- a/drivers/gpu/drm/dove/dove_drm.h
++++ b/drivers/gpu/drm/dove/dove_drm.h
+ <at>  <at>  -57,6 +57,7  <at>  <at>  void dove_overlay_destroy(struct drm_device *);
+ void dove_drm_overlay_off(struct drm_device *, struct dove_overlay *);
+
+ struct drm_connector *dove_drm_tda19988_create(struct drm_device *dev);
++struct drm_connector *dove_drm_tda19988_nxp_create(struct drm_device *dev);
+
+ int dove_drm_debugfs_init(struct drm_minor *);
+ void dove_drm_debugfs_cleanup(struct drm_minor *);
+diff --git a/drivers/gpu/drm/dove/dove_drv.c b/drivers/gpu/drm/dove/dove_drv.c
+index 98cb25f..1792f00 100644
+--- a/drivers/gpu/drm/dove/dove_drv.c
++++ b/drivers/gpu/drm/dove/dove_drv.c
+ <at>  <at>  -88,6 +88,10  <at>  <at>  static int dove_drm_load(struct drm_device *dev, unsigned long flags)
+ 		}
+ 	}
+
++#ifdef CONFIG_DRM_DOVE_TDA1998X
++	dove_drm_tda19988_create(dev);
++#endif
++
+ 	ret = drm_vblank_init(dev, n);
+ 	if (ret)
+ 		goto err_kms;
+diff --git a/drivers/gpu/drm/dove/dove_tda19988.c b/drivers/gpu/drm/dove/dove_tda19988.c
+new file mode 100644
+index 0000000..26ef2a2
+--- /dev/null
++++ b/drivers/gpu/drm/dove/dove_tda19988.c
+ <at>  <at>  -0,0 +1,249  <at>  <at> 
++/*
++ * Copyright (C) 2012 Russell King
++ *  Rewritten from the dovefb driver, and Armada510 manuals.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++#include "drmP.h"
++#include "drm_edid.h"
++#include "drm_crtc_helper.h"
++#include "dove_output.h"
++#include "dove_drm.h"
++#include <drm/drm_encoder_slave.h>
++#include <drm/i2c/tda998x.h>
++
++struct dove_drm_tda19988_encoder {
++	struct drm_encoder_slave slave;
++	struct drm_encoder_helper_funcs encoder_helpers;
++};
++#define to_tda19988_encoder(enc) container_of(to_encoder_slave(enc), struct
+dove_drm_tda19988_encoder, slave)
++
++static int dove_drm_connector_tda19988_mode_valid(struct drm_connector *conn,
++	struct drm_display_mode *mode)
++{
++	struct drm_encoder *enc = conn->encoder;
++	struct dove_drm_tda19988_encoder *tenc = to_tda19988_encoder(enc);
++
++	return tenc->slave.slave_funcs->mode_valid(enc, mode);
++}
++
++static int dove_drm_connector_tda19988_get_modes(struct drm_connector *conn)
++{
++	struct drm_display_mode *mode;
++	struct drm_encoder *enc = conn->encoder;
++	struct dove_drm_tda19988_encoder *tenc = to_tda19988_encoder(enc);
++	int count = tenc->slave.slave_funcs->get_modes(enc, conn);
++
++	if (count)
++		return count;
++
++	mode = drm_mode_create(conn->dev);
++	mode->type = DRM_MODE_TYPE_DRIVER;
++	mode->clock = 74250;
++	mode->vrefresh = 60;
++	mode->hdisplay = 1280;
++	mode->hsync_start = mode->hdisplay + 110;
++	mode->hsync_end = mode->hsync_start + 40;
++	mode->htotal = mode->hsync_end + 220;
++	mode->vdisplay = 720;
++	mode->vsync_start = mode->vdisplay + 5;
++	mode->vsync_end = mode->vsync_start + 5;
++	mode->vtotal = mode->vsync_end + 20;
++	mode->flags = DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC;
++
++	drm_mode_set_name(mode);
++	drm_mode_probed_add(conn, mode);
++
++	return 1;
++}
++
++static bool dove_drm_tda19988_enc_mode_fixup(struct drm_encoder *encoder,
++	const struct drm_display_mode *mode, struct drm_display_mode *adjusted)
++{
++	adjusted->flags &= ~(DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_NHSYNC |
++			     DRM_MODE_FLAG_PVSYNC | DRM_MODE_FLAG_NVSYNC |
++			     DRM_MODE_FLAG_PCSYNC | DRM_MODE_FLAG_NCSYNC);
++
++	/* The TDA19988 always requires negative VSYNC? */
++	adjusted->flags |= DRM_MODE_FLAG_NVSYNC;
++
++	/* The TDA19988 requires positive HSYNC on 1080p or 720p */
++	if ((adjusted->hdisplay == 1920 && adjusted->vdisplay == 1080) ||
++	    (adjusted->hdisplay == 1280 && adjusted->vdisplay == 720))
++		adjusted->flags |= DRM_MODE_FLAG_PHSYNC;
++	else
++		adjusted->flags |= DRM_MODE_FLAG_NHSYNC;
++
++	return true;
++}
++
++static void dove_drm_tda19988_enc_destroy(struct drm_encoder *enc)
++{
++	struct dove_drm_tda19988_encoder *tenc = to_tda19988_encoder(enc);
++
++	if (tenc->slave.slave_funcs)
++		tenc->slave.slave_funcs->destroy(enc);
++
++	drm_encoder_cleanup(&tenc->slave.base);
++	kfree(tenc);
++}
++
++static const struct drm_encoder_funcs dove_drm_tda19988_enc_funcs = {
++	.destroy	= dove_drm_tda19988_enc_destroy,
++};
++
++static const struct drm_connector_helper_funcs dove_drm_conn_tda19988_helper_funcs = {
++	.get_modes	= dove_drm_connector_tda19988_get_modes,
++	.mode_valid	= dove_drm_connector_tda19988_mode_valid,
++	.best_encoder	= dove_drm_connector_best_encoder,
++};
++
++static enum drm_connector_status dove_drm_conn_tda19988_detect(
++	struct drm_connector *conn, bool force)
++{
++	struct drm_encoder *enc = conn->encoder;
++	struct drm_encoder_helper_funcs *funcs = enc->helper_private;
++	enum drm_connector_status status = funcs->detect(enc, conn);
++
++	/*
++	 * Treat all disconnected status as unknown, otherwise we fail
++	 * to initialize when we have no "connected" output devices.
++	 */
++	if (status == connector_status_disconnected)
++		status = connector_status_unknown;
++
++	return status;
++}
++
++static struct i2c_board_info info[] = {
++	{
++		.type = "tda998x",
++		.addr = 0x70,
++	},
++	{ }
++};
++
++static struct tda998x_encoder_params params = {
++#if 0
++	/* This is with a post mux value of 0x12, which is what the nxp driver uses
++	    VIP_MUX_G_B | VIP_MUX_B_R | VIP_MUX_R_G = 0x00 | 0x02 | 0x10
++	LCD out	Pins	VIP	Int VP
++	R:7:0	VPC7:0	23:16	7:0[R]
++	G:15:8	VPB7:0	15:8	23:16[G]
++	B:23:16	VPA7:0	7:0	15:8[B]
++	*/
++	.swap_a = 0,
++	.swap_b = 1,
++	.swap_c = 2,
++	.swap_d = 3,
++	.swap_e = 4,
++	.swap_f = 5,
++#else
++	/* With 0x24, there is no translation between vp_out and int_vp
++	FB	LCD out	Pins	VIP 	Int Vp
++	R:23:16	R:7:0	VPC7:0	7:0	7:0[R]
++	G:15:8	G:15:8	VPB7:0	23:16	23:16[G]
++	B:7:0	B:23:16	VPA7:0	15:8	15:8[B]
++	*/
++	.swap_a = 2,
++	.swap_b = 3,
++	.swap_c = 4,
++	.swap_d = 5,
++	.swap_e = 0,
++	.swap_f = 1,
++#endif
++	.audio_cfg = BIT(2),
++	.audio_frame[1] = 1,
++	.audio_format = AFMT_SPDIF,
++	.audio_sample_rate = 44100,
++};
++
++static int dove_drm_conn_tda19988_create(struct drm_connector *conn,
++	struct drm_encoder **enc_ret)
++{
++	struct dove_drm_tda19988_encoder *tenc;
++	struct drm_encoder_slave_funcs *sfuncs;
++	struct i2c_adapter *adap;
++	int ret;
++
++	drm_connector_helper_add(conn, &dove_drm_conn_tda19988_helper_funcs);
++
++	tenc = kzalloc(sizeof(*tenc), GFP_KERNEL);
++	if (!tenc)
++		return -ENOMEM;
++
++	tenc->slave.base.possible_crtcs = 1 << 0;
++
++	adap = i2c_get_adapter(0);
++	if (!adap) {
++		kfree(tenc);
++		return -EPROBE_DEFER;
++	}
++
++	ret = drm_encoder_init(conn->dev, &tenc->slave.base,
++			       &dove_drm_tda19988_enc_funcs,
++			       DRM_MODE_ENCODER_TMDS);
++	if (ret) {
++		DRM_ERROR("unable to init encoder\n");
++		i2c_put_adapter(adap);
++		kfree(tenc);
++		return ret;
++	}
++
++	ret = drm_i2c_encoder_init(conn->dev, &tenc->slave, adap, info);
++	i2c_put_adapter(adap);
++	if (ret) {
++		DRM_ERROR("unable to init encoder slave\n");
++		dove_drm_tda19988_enc_destroy(&tenc->slave.base);
++		return ret;
++	}
++
++	sfuncs = tenc->slave.slave_funcs;
++	tenc->encoder_helpers.dpms = sfuncs->dpms;
++	tenc->encoder_helpers.save = sfuncs->save;
++	tenc->encoder_helpers.restore = sfuncs->restore;
++	tenc->encoder_helpers.mode_fixup = dove_drm_tda19988_enc_mode_fixup;
++	tenc->encoder_helpers.prepare = dove_drm_encoder_prepare;
++	tenc->encoder_helpers.commit = dove_drm_encoder_commit;
++	tenc->encoder_helpers.mode_set = sfuncs->mode_set;
++	tenc->encoder_helpers.detect = sfuncs->detect;
++
++	drm_encoder_helper_add(&tenc->slave.base, &tenc->encoder_helpers);
++	ret = sfuncs->create_resources(&tenc->slave.base, conn);
++	if (ret) {
++		dove_drm_tda19988_enc_destroy(&tenc->slave.base);
++		return ret;
++	}
++
++	sfuncs->set_config(&tenc->slave.base, &params);
++
++	conn->encoder = &tenc->slave.base;
++	*enc_ret = &tenc->slave.base;
++
++	return ret;
++}
++
++static int dove_drm_conn_tda19988_set_property(struct drm_connector *conn,
++	struct drm_property *property, uint64_t value)
++{
++	struct dove_drm_tda19988_encoder *tenc =
++		to_tda19988_encoder(conn->encoder);
++	struct drm_encoder_slave_funcs *sfuncs = tenc->slave.slave_funcs;
++
++	return sfuncs->set_property(&tenc->slave.base, conn, property, value);
++}
++
++static const struct dove_output_type dove_drm_conn_tda19988 = {
++	.connector_type	= DRM_MODE_CONNECTOR_HDMIA,
++	.polled		= DRM_CONNECTOR_POLL_HPD,
++	.detect		= dove_drm_conn_tda19988_detect,
++	.create		= dove_drm_conn_tda19988_create,
++	.set_property	= dove_drm_conn_tda19988_set_property,
++};
++
++struct drm_connector *dove_drm_tda19988_create(struct drm_device *dev)
++{
++	return dove_output_create(dev, &dove_drm_conn_tda19988);
++}
+-- 
+1.7.4.4

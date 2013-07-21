@@ -1,0 +1,118 @@
+Signed-off-by: Russell King <rmk+kernel <at> arm.linux.org.uk>
+---
+ drivers/gpu/drm/dove/dove_output.c   |   20 ++++++++++++++++++++
+ drivers/gpu/drm/dove/dove_output.h   |    6 ++++++
+ drivers/gpu/drm/dove/dove_tda19988.c |   23 ++---------------------
+ 3 files changed, 28 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/gpu/drm/dove/dove_output.c b/drivers/gpu/drm/dove/dove_output.c
+index 7cd7d35..470ce80 100644
+--- a/drivers/gpu/drm/dove/dove_output.c
++++ b/drivers/gpu/drm/dove/dove_output.c
+ <at>  <at>  -9,6 +9,7  <at>  <at> 
+ #include "drm_crtc_helper.h"
+ #include "drm_edid.h"
+ #include "drm_helper.h"
++#include "drm_encoder_slave.h"
+ #include "dove_output.h"
+ #include "dove_drm.h"
+
+ <at>  <at>  -76,6 +77,25  <at>  <at>  void dove_drm_encoder_commit(struct drm_encoder *encoder)
+ 	funcs->dpms(encoder, DRM_MODE_DPMS_ON);
+ }
+
++/* Shouldn't this be a generic helper function? */
++int dove_drm_slave_encoder_mode_valid(struct drm_connector *conn,
++	struct drm_display_mode *mode)
++{
++	struct drm_encoder *encoder = conn->encoder;
++	struct drm_encoder_slave *slave = to_encoder_slave(encoder);
++
++	return slave->slave_funcs->mode_valid(encoder, mode);
++}
++
++int dove_drm_slave_encoder_set_property(struct drm_connector *conn,
++	struct drm_property *property, uint64_t value)
++{
++	struct drm_encoder *encoder = conn->encoder;
++	struct drm_encoder_slave *slave = to_encoder_slave(encoder);
++
++	return slave->slave_funcs->set_property(encoder, conn, property, value);
++}
++
+ struct drm_connector *dove_output_create(struct drm_device *dev,
+ 	const struct dove_output_type *type)
+ {
+diff --git a/drivers/gpu/drm/dove/dove_output.h b/drivers/gpu/drm/dove/dove_output.h
+index 1b12890..d504ef0 100644
+--- a/drivers/gpu/drm/dove/dove_output.h
++++ b/drivers/gpu/drm/dove/dove_output.h
+ <at>  <at>  -20,6 +20,12  <at>  <at>  struct drm_encoder *dove_drm_connector_best_encoder(struct drm_connector *conn);
+ void dove_drm_encoder_prepare(struct drm_encoder *encoder);
+ void dove_drm_encoder_commit(struct drm_encoder *encoder);
+
++int dove_drm_slave_encoder_mode_valid(struct drm_connector *conn,
++	struct drm_display_mode *mode);
++
++int dove_drm_slave_encoder_set_property(struct drm_connector *conn,
++	struct drm_property *property, uint64_t value);
++
+ struct drm_connector *dove_output_create(struct drm_device *dev,
+ 	const struct dove_output_type *);
+
+diff --git a/drivers/gpu/drm/dove/dove_tda19988.c b/drivers/gpu/drm/dove/dove_tda19988.c
+index 26ef2a2..0b179d7 100644
+--- a/drivers/gpu/drm/dove/dove_tda19988.c
++++ b/drivers/gpu/drm/dove/dove_tda19988.c
+ <at>  <at>  -20,15 +20,6  <at>  <at>  struct dove_drm_tda19988_encoder {
+ };
+ #define to_tda19988_encoder(enc) container_of(to_encoder_slave(enc), struct
+dove_drm_tda19988_encoder, slave)
+
+-static int dove_drm_connector_tda19988_mode_valid(struct drm_connector *conn,
+-	struct drm_display_mode *mode)
+-{
+-	struct drm_encoder *enc = conn->encoder;
+-	struct dove_drm_tda19988_encoder *tenc = to_tda19988_encoder(enc);
+-
+-	return tenc->slave.slave_funcs->mode_valid(enc, mode);
+-}
+-
+ static int dove_drm_connector_tda19988_get_modes(struct drm_connector *conn)
+ {
+ 	struct drm_display_mode *mode;
+ <at>  <at>  -96,7 +87,7  <at>  <at>  static const struct drm_encoder_funcs dove_drm_tda19988_enc_funcs = {
+
+ static const struct drm_connector_helper_funcs dove_drm_conn_tda19988_helper_funcs = {
+ 	.get_modes	= dove_drm_connector_tda19988_get_modes,
+-	.mode_valid	= dove_drm_connector_tda19988_mode_valid,
++	.mode_valid	= dove_drm_slave_encoder_mode_valid,
+ 	.best_encoder	= dove_drm_connector_best_encoder,
+ };
+
+ <at>  <at>  -225,22 +216,12  <at>  <at>  static int dove_drm_conn_tda19988_create(struct drm_connector *conn,
+ 	return ret;
+ }
+
+-static int dove_drm_conn_tda19988_set_property(struct drm_connector *conn,
+-	struct drm_property *property, uint64_t value)
+-{
+-	struct dove_drm_tda19988_encoder *tenc =
+-		to_tda19988_encoder(conn->encoder);
+-	struct drm_encoder_slave_funcs *sfuncs = tenc->slave.slave_funcs;
+-
+-	return sfuncs->set_property(&tenc->slave.base, conn, property, value);
+-}
+-
+ static const struct dove_output_type dove_drm_conn_tda19988 = {
+ 	.connector_type	= DRM_MODE_CONNECTOR_HDMIA,
+ 	.polled		= DRM_CONNECTOR_POLL_HPD,
+ 	.detect		= dove_drm_conn_tda19988_detect,
+ 	.create		= dove_drm_conn_tda19988_create,
+-	.set_property	= dove_drm_conn_tda19988_set_property,
++	.set_property	= dove_drm_slave_encoder_set_property,
+ };
+
+ struct drm_connector *dove_drm_tda19988_create(struct drm_device *dev)
+-- 
+1.7.4.4
